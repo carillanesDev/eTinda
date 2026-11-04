@@ -10,7 +10,6 @@ import {
   Copy,
   Edit3,
   FolderPlus,
-  Layers,
   Lock,
   Plus,
   Star,
@@ -35,7 +34,6 @@ import {
   duplicateProduct,
   upsertCategory,
   upsertProduct,
-  upsertProductVariant,
 } from "@/features/inventory/inventoryService";
 import { db } from "@/lib/db/dexie";
 import { SEED_CATEGORY_IDS } from "@/lib/db/seed-local";
@@ -78,14 +76,6 @@ export default function ProductsCatalogPage() {
   // Category Modal State
   const [isCategoryModalOpen, setIsCategoryModalOpen] = React.useState(false);
   const [newCategoryName, setNewCategoryName] = React.useState("");
-
-  // Variant Modal State
-  const [variantTargetProduct, setVariantTargetProduct] =
-    React.useState<ProductEntity | null>(null);
-  const [varName, setVarName] = React.useState("");
-  const [varUnitLabel, setVarUnitLabel] = React.useState("tie (6s)");
-  const [varMultiplierStr, setVarMultiplierStr] = React.useState("6");
-  const [varPriceStr, setVarPriceStr] = React.useState("");
 
   const categoriesQuery = useLiveQuery(async () => {
     return db.categories.orderBy("sortOrder").toArray();
@@ -260,23 +250,6 @@ export default function ProductsCatalogPage() {
     });
     setNewCategoryName("");
     setIsCategoryModalOpen(false);
-  };
-
-  const handleSaveVariant = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!variantTargetProduct) return;
-    await upsertProductVariant({
-      productId: variantTargetProduct.id,
-      name: varName,
-      unitLabel: varUnitLabel,
-      conversionMultiplier: Number.parseFloat(varMultiplierStr) || 1,
-      sellingPriceCentavos: parsePesoInputToCentavos(varPriceStr),
-      allowDecimalQuantity: false,
-      isActive: true,
-    });
-    setVarName("");
-    setVarPriceStr("");
-    setVariantTargetProduct(null);
   };
 
   return (
@@ -476,13 +449,6 @@ export default function ProductsCatalogPage() {
                   {/* Actions */}
                   {canManageProducts ? (
                     <div className="flex items-center justify-end gap-2 border-t border-border pt-2.5">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setVariantTargetProduct(product)}
-                      >
-                        <Layers className="h-3.5 w-3.5" />+ Unit/Pack
-                      </Button>
                       <Button
                         size="sm"
                         variant="secondary"
@@ -768,94 +734,6 @@ export default function ProductsCatalogPage() {
             ))}
           </div>
         </div>
-      </ResponsiveDialog>
-
-      {/* Add Variant / Unit Conversion Modal */}
-      <ResponsiveDialog
-        open={Boolean(variantTargetProduct)}
-        onClose={() => setVariantTargetProduct(null)}
-        title={`Add Selling Unit for ${variantTargetProduct?.name ?? ""}`}
-        description="Define a pack, tie, or case conversion multiplier in base units."
-      >
-        <form onSubmit={handleSaveVariant} className="space-y-3.5">
-          <div>
-            <label
-              htmlFor="var-name-input"
-              className="mb-1 block text-xs font-semibold text-foreground"
-            >
-              Variant / Pack Label
-            </label>
-            <Input
-              id="var-name-input"
-              value={varName}
-              onChange={(e) => setVarName(e.target.value)}
-              placeholder="e.g., Half-Dozen Tie (6 Packs)"
-              required
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label
-                htmlFor="var-unit-input"
-                className="mb-1 block text-xs font-semibold text-foreground"
-              >
-                Short Unit Label
-              </label>
-              <Input
-                id="var-unit-input"
-                value={varUnitLabel}
-                onChange={(e) => setVarUnitLabel(e.target.value)}
-                placeholder="tie (6s)"
-                required
-              />
-            </div>
-            <div>
-              <label
-                htmlFor="var-mult-input"
-                className="mb-1 block text-xs font-semibold text-foreground"
-              >
-                Base Unit Multiplier ({variantTargetProduct?.baseUnit})
-              </label>
-              <Input
-                id="var-mult-input"
-                type="number"
-                step="any"
-                min="0.1"
-                value={varMultiplierStr}
-                onChange={(e) => setVarMultiplierStr(e.target.value)}
-                required
-              />
-            </div>
-          </div>
-          <div>
-            <label
-              htmlFor="var-price-input"
-              className="mb-1 block text-xs font-semibold text-foreground"
-            >
-              Variant Selling Price (₱)
-            </label>
-            <Input
-              id="var-price-input"
-              type="number"
-              inputMode="decimal"
-              step="0.01"
-              min="0.01"
-              value={varPriceStr}
-              onChange={(e) => setVarPriceStr(e.target.value)}
-              placeholder="e.g., 102.00"
-              required
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button
-              variant="outline"
-              onClick={() => setVariantTargetProduct(null)}
-            >
-              Cancel
-            </Button>
-            <Button type="submit">Save Unit Conversion</Button>
-          </div>
-        </form>
       </ResponsiveDialog>
 
       {/* Delete Product Confirmation Dialog */}
