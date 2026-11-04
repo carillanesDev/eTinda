@@ -90,26 +90,11 @@ export default function ProductsCatalogPage() {
       return db.products.orderBy("name").toArray();
     }, []) ?? [];
 
-  const variantsQuery = useLiveQuery(async () => {
-    return db.product_variants.toArray();
-  }, []);
-
   const categoryMap = React.useMemo(() => {
     const map = new Map<string, string>();
     for (const c of categories) map.set(c.id, c.name);
     return map;
   }, [categories]);
-
-  const variantsByProduct = React.useMemo(() => {
-    const allVariants = variantsQuery ?? [];
-    const map = new Map<string, typeof allVariants>();
-    for (const v of allVariants) {
-      const arr = map.get(v.productId) ?? [];
-      arr.push(v);
-      map.set(v.productId, arr);
-    }
-    return map;
-  }, [variantsQuery]);
 
   const filteredProducts = products.filter((p) => {
     if (selectedCategory !== "ALL" && p.categoryId !== selectedCategory) {
@@ -347,8 +332,6 @@ export default function ProductsCatalogPage() {
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
           {filteredProducts.map((product) => {
-            const productVariants = variantsByProduct.get(product.id) ?? [];
-
             return (
               <Card
                 key={product.id}
@@ -421,30 +404,6 @@ export default function ProductsCatalogPage() {
                       Alert ≤ {product.lowStockThreshold} {product.baseUnit}
                     </span>
                   </div>
-
-                  {/* Variants List */}
-                  {productVariants.length > 0 ? (
-                    <div className="space-y-1 border-t border-border pt-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        Selling Unit Conversions ({productVariants.length})
-                      </p>
-                      {productVariants.map((v) => (
-                        <div
-                          key={v.id}
-                          className="flex items-center justify-between text-xs"
-                        >
-                          <span className="text-foreground">
-                            {v.name} ({v.conversionMultiplier}{" "}
-                            {product.baseUnit})
-                          </span>
-                          <CurrencyDisplay
-                            centavos={v.sellingPriceCentavos}
-                            className="text-primary"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
 
                   {/* Actions */}
                   {canManageProducts ? (

@@ -157,19 +157,15 @@ export default function ProductDetailPage() {
       </Card>
 
       {/* Variants */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Layers className="h-4 w-4 text-primary" />
-            Configured Selling Units & Pack Conversions ({variants.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {variants.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Sold only by base unit ({product.baseUnit}).
-            </p>
-          ) : (
+      {variants.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Layers className="h-4 w-4 text-primary" />
+              Configured Selling Units & Pack Conversions ({variants.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
             <div className="divide-y divide-border">
               {variants.map((v) => (
                 <div
@@ -190,9 +186,9 @@ export default function ProductDetailPage() {
                 </div>
               ))}
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Product Stock Movement Ledger */}
       <Card>
