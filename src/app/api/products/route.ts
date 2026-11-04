@@ -91,3 +91,53 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const ctx = await resolveRequestAuthContext(request, "MANAGE_PRODUCTS");
+    const { searchParams } = new URL(request.url);
+    const productId = searchParams.get("id");
+    if (!productId) {
+      return NextResponse.json(
+        { ok: false, code: "MISSING_ID", error: "Missing product id" },
+        { status: 400 }
+      );
+    }
+
+    const result = serverStoreLedger.runInTransaction((tx) => {
+      const product = tx.products.get(productId);
+      if (!product || product.storeId !== ctx.storeId) {
+        throw new Error("Product not found");
+      }
+
+      // Check if product has sales transactions
+      const hasSales = Array.from(tx.saleItems.values()).some(
+        (item) => item.productId === productId
+      );
+
+      if (hasSales) {
+        const archived: ProductEntity = {
+          ...product,
+          isActive: false,
+          updatedAt: new Date().toISOString(),
+        };
+        tx.products.set(productId, archived);
+        return { deleted: false, archived: true };
+      } else {
+        tx.products.delete(productId);
+        for (const [vid, v] of tx.productVariants.entries()) {
+          if (v.productId === productId) tx.productVariants.delete(vid);
+        }
+        return { deleted: true, archived: false };
+      }
+    });
+
+    return NextResponse.json({ ok: true, ...result });
+  } catch (error) {
+    const err = error as Error & { statusCode?: number; code?: string };
+    return NextResponse.json(
+      { ok: false, code: err.code ?? "PRODUCT_DELETE_ERROR", error: err.message },
+      { status: err.statusCode ?? 500 }
+    );
+  }
+}

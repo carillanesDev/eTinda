@@ -865,4 +865,87 @@ describe("eTinda Multi-Device Synchronization, Integrity & Edge-Case Suite (AGEN
       18
     );
   });
+
+  it("9. Safely deletes unreferenced products and archives products with sales history to protect financial auditability", () => {
+    const unreferencedProdId = generateUuid();
+    const nowIso = new Date().toISOString();
+
+    // 1. Add unreferenced product to server ledger
+    engine.runInTransaction((tx) => {
+      tx.products.set(unreferencedProdId, {
+        id: unreferencedProdId,
+        storeId: DEFAULT_STORE_ID,
+        categoryId: SEED_CATEGORY_IDS.COFFEE_DRINKS,
+        name: "Test Accidental Product",
+        baseUnit: "bottle",
+        sellingPriceCentavos: 2500,
+        latestCostCentavos: 1800,
+        lowStockThreshold: 5,
+        allowDecimalQuantity: false,
+        isFrequent: false,
+        isActive: true,
+        cachedStock: 0,
+        syncStatus: "SYNCED",
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      });
+    });
+
+    assert.equal(
+      engine.getState().products.has(unreferencedProdId),
+      true
+    );
+
+    // 2. Delete unreferenced product (no sales history) -> should hard delete
+    engine.runInTransaction((tx) => {
+      const hasSales = Array.from(tx.saleItems.values()).some(
+        (i) => i.productId === unreferencedProdId
+      );
+      assert.equal(hasSales, false);
+      tx.products.delete(unreferencedProdId);
+    });
+
+    assert.equal(
+      engine.getState().products.has(unreferencedProdId),
+      false
+    );
+
+    // 3. Attempt deletion of product WITH sales history (SEED_PRODUCT_IDS.PANCIT_CANTON)
+    engine.runInTransaction((tx) => {
+      const prod = engine.getState().products.get(SEED_PRODUCT_IDS.PANCIT_CANTON);
+      assert.ok(prod);
+
+      // Record a sale item for this product
+      const saleItemId = generateUuid();
+      tx.saleItems.set(saleItemId, {
+        id: saleItemId,
+        saleId: generateUuid(),
+        storeId: DEFAULT_STORE_ID,
+        productId: SEED_PRODUCT_IDS.PANCIT_CANTON,
+        productNameSnapshot: prod.name,
+        unitLabelSnapshot: prod.baseUnit,
+        quantity: 1,
+        baseUnitMultiplier: 1,
+        unitSellingPriceCentavos: prod.sellingPriceCentavos,
+        unitCostSnapshotCentavos: prod.latestCostCentavos,
+        subtotalCentavos: prod.sellingPriceCentavos,
+      });
+
+      const hasSales = Array.from(tx.saleItems.values()).some(
+        (i) => i.productId === SEED_PRODUCT_IDS.PANCIT_CANTON
+      );
+      assert.equal(hasSales, true);
+
+      // Financial history exists: must NOT delete row, must deactivate/archive instead
+      tx.products.set(SEED_PRODUCT_IDS.PANCIT_CANTON, {
+        ...prod,
+        isActive: false,
+        updatedAt: new Date().toISOString(),
+      });
+    });
+
+    const archivedProd = engine.getState().products.get(SEED_PRODUCT_IDS.PANCIT_CANTON);
+    assert.ok(archivedProd);
+    assert.equal(archivedProd.isActive, false);
+  });
 });

@@ -2,30 +2,56 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ArrowLeft, Layers, History } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Layers, History, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CurrencyDisplay } from "@/components/shared/CurrencyDisplay";
+import { ResponsiveDialog } from "@/components/shared/StateViews";
 import {
   RecordSyncBadge,
   StockStatusBadge,
 } from "@/components/shared/StatusBadges";
+import { deleteProduct } from "@/features/inventory/inventoryService";
 import { db } from "@/lib/db/dexie";
 import { hasPermission } from "@/lib/permissions";
 import { useSessionStore } from "@/stores/useSessionStore";
 
 export default function ProductDetailPage() {
   const params = useParams<{ productId: string }>();
+  const router = useRouter();
   const productId = params.productId;
   const role = useSessionStore((s) => s.role);
   const canViewCost = hasPermission(role, "VIEW_FINANCIAL_MARGINS");
+  const canManageProducts = hasPermission(role, "MANAGE_PRODUCTS");
+
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
+  const [isDeleting, setIsDeleting] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState("");
 
   const product = useLiveQuery(
     async () => db.products.get(productId),
     [productId]
   );
+
+  const handleDeleteProduct = async () => {
+    if (!product) return;
+    setIsDeleting(true);
+    setDeleteError("");
+    try {
+      await deleteProduct(product.id);
+      setIsDeleteDialogOpen(false);
+      router.push("/products");
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error ? err.message : "Failed to delete product"
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const variants =
     useLiveQuery(
@@ -77,7 +103,21 @@ export default function ProductDetailPage() {
               Alert: ≤ {product.lowStockThreshold} {product.baseUnit}
             </p>
           </div>
-          <RecordSyncBadge status={product.syncStatus} />
+          <div className="flex items-center gap-2">
+            <RecordSyncBadge status={product.syncStatus} />
+            {canManageProducts ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/20"
+                onClick={() => setIsDeleteDialogOpen(true)}
+                data-testid="delete-product-detail-btn"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete Product
+              </Button>
+            ) : null}
+          </div>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="rounded-xl border border-border bg-muted/40 p-3">
@@ -204,6 +244,70 @@ export default function ProductDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Delete Product Confirmation Dialog */}
+      <ResponsiveDialog
+        open={isDeleteDialogOpen}
+        onClose={() => setIsDeleteDialogOpen(false)}
+        title="Delete Product"
+        description="Are you sure you want to delete this product?"
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3.5 text-xs">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-destructive mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-semibold text-foreground text-sm">
+                  {product.name}
+                </p>
+                <p className="text-muted-foreground">
+                  Current stock:{" "}
+                  <strong>
+                    {product.cachedStock} {product.baseUnit}
+                  </strong>{" "}
+                  • Selling Price:{" "}
+                  <strong>
+                    ₱{(product.sellingPriceCentavos / 100).toFixed(2)}
+                  </strong>
+                </p>
+                <p className="text-[11px] text-muted-foreground pt-1">
+                  If this product has existing sales or inventory transaction
+                  history, it will be safely deactivated and archived from POS
+                  to preserve store financial audit history.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {deleteError ? (
+            <p className="text-xs font-semibold text-destructive" role="alert">
+              {deleteError}
+            </p>
+          ) : null}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsDeleteDialogOpen(false)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={handleDeleteProduct}
+              disabled={isDeleting}
+              data-testid="confirm-delete-product-detail-btn"
+            >
+              {isDeleting ? "Deleting..." : "Delete Product"}
+            </Button>
+          </div>
+        </div>
+      </ResponsiveDialog>
     </div>
   );
 }

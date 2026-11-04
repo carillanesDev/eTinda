@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
+  AlertTriangle,
   Boxes,
   CheckCircle2,
   Copy,
@@ -13,6 +14,7 @@ import {
   Lock,
   Plus,
   Star,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,6 +31,7 @@ import {
   StockStatusBadge,
 } from "@/components/shared/StatusBadges";
 import {
+  deleteProduct,
   duplicateProduct,
   upsertCategory,
   upsertProduct,
@@ -69,6 +72,8 @@ export default function ProductsCatalogPage() {
   const [formError, setFormError] = React.useState("");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [successNotice, setSuccessNotice] = React.useState<string | null>(null);
+  const [deleteConfirmationProduct, setDeleteConfirmationProduct] =
+    React.useState<ProductEntity | null>(null);
 
   // Category Modal State
   const [isCategoryModalOpen, setIsCategoryModalOpen] = React.useState(false);
@@ -222,6 +227,30 @@ export default function ProductsCatalogPage() {
     }
   };
 
+  const handleConfirmDeleteProduct = async () => {
+    if (!deleteConfirmationProduct) return;
+    setFormError("");
+    setIsSubmitting(true);
+    try {
+      const res = await deleteProduct(deleteConfirmationProduct.id);
+      setDeleteConfirmationProduct(null);
+      setIsProductModalOpen(false);
+      if (res.deleted) {
+        setSuccessNotice(`Product "${res.productName}" was deleted.`);
+      } else {
+        setSuccessNotice(
+          `Product "${res.productName}" has existing transaction history, so it was archived and removed from POS.`
+        );
+      }
+    } catch (err) {
+      setFormError(
+        err instanceof Error ? err.message : "Failed to delete product"
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCategoryName.trim()) return;
@@ -365,6 +394,11 @@ export default function ProductsCatalogPage() {
                         >
                           {product.name}
                         </Link>
+                        {!product.isActive ? (
+                          <Badge variant="secondary" className="text-[10px]">
+                            Archived
+                          </Badge>
+                        ) : null}
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {categoryMap.get(product.categoryId) ?? "General"} •
@@ -456,6 +490,16 @@ export default function ProductsCatalogPage() {
                       >
                         <Edit3 className="h-3.5 w-3.5" />
                         Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/20"
+                        onClick={() => setDeleteConfirmationProduct(product)}
+                        data-testid={`delete-product-card-btn-${product.id}`}
+                        title={`Delete ${product.name}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   ) : null}
@@ -644,18 +688,32 @@ export default function ProductsCatalogPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border">
             {editingProduct && canManageProducts ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleDuplicateProduct}
-                disabled={isSubmitting}
-                data-testid="duplicate-product-btn"
-                className="gap-1.5 text-muted-foreground hover:text-foreground"
-              >
-                <Copy className="h-3.5 w-3.5" />
-                {isSubmitting ? "Duplicating..." : "Duplicate"}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDeleteConfirmationProduct(editingProduct)}
+                  disabled={isSubmitting}
+                  data-testid="delete-product-btn"
+                  className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/20"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDuplicateProduct}
+                  disabled={isSubmitting}
+                  data-testid="duplicate-product-btn"
+                  className="gap-1.5 text-muted-foreground hover:text-foreground"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  {isSubmitting ? "Duplicating..." : "Duplicate"}
+                </Button>
+              </div>
             ) : (
               <span />
             )}
@@ -798,6 +856,75 @@ export default function ProductsCatalogPage() {
             <Button type="submit">Save Unit Conversion</Button>
           </div>
         </form>
+      </ResponsiveDialog>
+
+      {/* Delete Product Confirmation Dialog */}
+      <ResponsiveDialog
+        open={Boolean(deleteConfirmationProduct)}
+        onClose={() => setDeleteConfirmationProduct(null)}
+        title="Delete Product"
+        description="Are you sure you want to delete this product?"
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3.5 text-xs">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-destructive mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-semibold text-foreground text-sm">
+                  {deleteConfirmationProduct?.name}
+                </p>
+                <p className="text-muted-foreground">
+                  Current stock:{" "}
+                  <strong>
+                    {deleteConfirmationProduct?.cachedStock}{" "}
+                    {deleteConfirmationProduct?.baseUnit}
+                  </strong>{" "}
+                  • Selling Price:{" "}
+                  <strong>
+                    ₱
+                    {(
+                      (deleteConfirmationProduct?.sellingPriceCentavos ?? 0) /
+                      100
+                    ).toFixed(2)}
+                  </strong>
+                </p>
+                <p className="text-[11px] text-muted-foreground pt-1">
+                  If this product has existing sales or inventory transaction
+                  history, it will be safely deactivated and archived from POS
+                  to preserve store financial audit history.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {formError ? (
+            <p className="text-xs font-semibold text-destructive" role="alert">
+              {formError}
+            </p>
+          ) : null}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteConfirmationProduct(null)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={handleConfirmDeleteProduct}
+              disabled={isSubmitting}
+              data-testid="confirm-delete-product-btn"
+            >
+              {isSubmitting ? "Deleting..." : "Delete Product"}
+            </Button>
+          </div>
+        </div>
       </ResponsiveDialog>
     </div>
   );

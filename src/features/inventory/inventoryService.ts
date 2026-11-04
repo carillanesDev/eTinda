@@ -126,6 +126,153 @@ export async function upsertProduct(
   return savedProduct;
 }
 
+export async function deleteProduct(productId: string): Promise<{
+  deleted: boolean;
+  archived: boolean;
+  productName: string;
+}> {
+  const session = useSessionStore.getState();
+  if (!hasPermission(session.role, "MANAGE_PRODUCTS")) {
+    throw new Error("Only the Store Owner can delete products.");
+  }
+
+  const product = await db.products.get(productId);
+  if (!product) {
+    throw new Error("Product not found.");
+  }
+
+  // Check if product is referenced in completed sales or purchase orders
+  const relatedSalesCount = await db.sale_items
+    .where("productId")
+    .equals(productId)
+    .count();
+
+  const relatedPurchasesCount = await db.purchase_items
+    .where("productId")
+    .equals(productId)
+    .count();
+
+  const nowIso = new Date().toISOString();
+  let result = { deleted: false, archived: false, productName: product.name };
+
+  await db.transaction(
+    "rw",
+    [
+      db.products,
+      db.product_variants,
+      db.inventory_movements,
+      db.audit_logs,
+      db.sync_outbox,
+    ],
+    async () => {
+      if (relatedSalesCount > 0 || relatedPurchasesCount > 0) {
+        // Financial records exist: deactivate and archive to preserve historical transaction integrity (AGENTS.md Section 3.3 & 6)
+        await db.products.update(productId, {
+          isActive: false,
+          syncStatus: "PENDING",
+          updatedAt: nowIso,
+        });
+
+        // Also deactivate associated variants
+        const variants = await db.product_variants
+          .where("productId")
+          .equals(productId)
+          .toArray();
+        for (const v of variants) {
+          await db.product_variants.update(v.id, {
+            isActive: false,
+            syncStatus: "PENDING",
+            updatedAt: nowIso,
+          });
+        }
+
+        await db.audit_logs.put({
+          id: generateUuid(),
+          storeId: session.storeId,
+          deviceId: session.deviceId,
+          userId: session.userId,
+          userNameSnapshot: session.userName,
+          userRole: session.role,
+          action: "PRODUCT_DEACTIVATED",
+          entityType: "PRODUCT",
+          entityId: productId,
+          summary: `Deactivated/archived product "${product.name}" due to existing historical transactions.`,
+          createdAt: nowIso,
+        });
+
+        await db.sync_outbox.put(
+          createSyncEvent({
+            eventType: "PRODUCT_UPSERTED",
+            entityId: productId,
+            payload: { ...product, isActive: false, updatedAt: nowIso },
+          })
+        );
+
+        result = { deleted: false, archived: true, productName: product.name };
+      } else {
+        // No financial transactions: safely hard delete from local catalog
+        await db.products.delete(productId);
+        await db.product_variants
+          .where("productId")
+          .equals(productId)
+          .delete();
+
+        // Remove opening stock movements if not linked to purchases/sales
+        const openingMovements = await db.inventory_movements
+          .where("productId")
+          .equals(productId)
+          .toArray();
+        for (const mov of openingMovements) {
+          if (!mov.referenceId) {
+            await db.inventory_movements.delete(mov.id);
+          }
+        }
+
+        // Clean pending creation events from outbox if not synced yet
+        const pendingOutbox = await db.sync_outbox
+          .where("entityId")
+          .equals(productId)
+          .toArray();
+        for (const evt of pendingOutbox) {
+          if (evt.eventType === "PRODUCT_UPSERTED") {
+            await db.sync_outbox.delete(evt.eventId);
+          }
+        }
+
+        await db.audit_logs.put({
+          id: generateUuid(),
+          storeId: session.storeId,
+          deviceId: session.deviceId,
+          userId: session.userId,
+          userNameSnapshot: session.userName,
+          userRole: session.role,
+          action: "PRODUCT_DELETED",
+          entityType: "PRODUCT",
+          entityId: productId,
+          summary: `Deleted product "${product.name}" (no financial history).`,
+          createdAt: nowIso,
+        });
+
+        result = { deleted: true, archived: false, productName: product.name };
+      }
+    }
+  );
+
+  // Attempt to notify server if online
+  if (result.deleted && typeof window !== "undefined" && navigator.onLine) {
+    try {
+      await fetch(`/api/products?id=${encodeURIComponent(productId)}`, {
+        method: "DELETE",
+      }).catch(() => {});
+    } catch {
+      // Offline-safe: network failure does not block local deletion
+    }
+  }
+
+  void synchronizePendingOutbox();
+  return result;
+}
+
 export async function duplicateProduct(
   sourceProductId: string,
   overrides?: {
