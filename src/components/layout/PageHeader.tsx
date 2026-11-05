@@ -6,8 +6,6 @@ import {
   Maximize,
   Menu,
   Minimize,
-  PanelLeftClose,
-  PanelLeftOpen,
   Shield,
   ShoppingBasket,
   UserCheck,
@@ -25,8 +23,6 @@ export function PageHeader() {
 
   const isMiniPosHiddenByUser = useUIStore((s) => s.isMiniPosHiddenByUser);
   const setMiniPosExpanded = useUIStore((s) => s.setMiniPosExpanded);
-  const isSidebarCollapsed = useUIStore((s) => s.isSidebarCollapsed);
-  const toggleSidebar = useUIStore((s) => s.toggleSidebar);
   const setMoreNavOpen = useUIStore((s) => s.setMoreNavOpen);
 
   const [isFullscreen, setIsFullscreen] = React.useState(false);
@@ -239,22 +235,6 @@ export function PageHeader() {
           className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-foreground hover:bg-muted cursor-pointer transition-colors md:hidden"
         >
           <Menu className="h-5 w-5" />
-        </button>
-
-        {/* Tablet / Desktop: collapse or expand sidebar */}
-        <button
-          type="button"
-          onClick={toggleSidebar}
-          data-testid="header-sidebar-toggle-btn"
-          title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="hidden md:inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-foreground hover:bg-muted cursor-pointer transition-colors"
-        >
-          {isSidebarCollapsed ? (
-            <PanelLeftOpen className="h-4 w-4" />
-          ) : (
-            <PanelLeftClose className="h-4 w-4" />
-          )}
         </button>
 
         <div className="min-w-0 flex-1">
