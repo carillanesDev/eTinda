@@ -30,7 +30,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-dvh w-full bg-background text-foreground">
       <React.Suspense
         fallback={
-          <aside className="hidden md:sticky md:top-0 md:z-30 md:flex md:h-dvh md:w-[244px] md:shrink-0 md:flex-col md:border-r md:border-border md:bg-card" />
+          <aside className="hidden md:sticky md:top-0 md:z-40 md:flex md:h-dvh md:w-[244px] md:shrink-0 md:flex-col md:border-r md:border-border md:bg-card" />
         }
       >
         <DesktopSidebar />

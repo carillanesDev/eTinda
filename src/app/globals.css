@@ -96,3 +96,20 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* In-App Kiosk Fullscreen Mode */
+html.etinda-kiosk-fullscreen {
+  overflow: hidden !important;
+  height: 100dvh !important;
+  width: 100vw !important;
+}
+
+body.etinda-kiosk-fullscreen {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  height: 100dvh !important;
+  width: 100vw !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+

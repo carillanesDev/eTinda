@@ -7,6 +7,11 @@ export const metadata: Metadata = {
   description:
     "Mobile-first, offline-first Point of Sale, Inventory Ledger, and Utang Management System for Sari-Sari Stores.",
   manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "eTinda POS",
+  },
 };
 
 export const viewport: Viewport = {
@@ -14,6 +19,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

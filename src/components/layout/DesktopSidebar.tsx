@@ -43,7 +43,7 @@ export function DesktopSidebar() {
     <aside
       aria-label="Primary Store Navigation"
       className={cn(
-        "hidden md:sticky md:top-0 md:z-30 md:flex md:h-dvh md:shrink-0 md:flex-col md:border-r md:border-border md:bg-card md:transition-all md:duration-200",
+        "hidden md:sticky md:top-0 md:z-40 md:flex md:h-dvh md:shrink-0 md:flex-col md:border-r md:border-border md:bg-card md:transition-all md:duration-200",
         isCollapsed ? "md:w-[76px]" : "md:w-[244px]"
       )}
     >
@@ -51,54 +51,51 @@ export function DesktopSidebar() {
       <div
         className={cn(
           "relative z-40 flex h-16 shrink-0 items-center border-b border-border px-3.5",
-          isCollapsed ? "justify-center" : "justify-start"
+          isCollapsed ? "justify-center" : "justify-between"
         )}
       >
-        <div className="group/brand relative flex min-w-0 items-center gap-2.5">
-          {/* Logo slot: swaps to the sidebar toggle button on hover of Logo or eTinda POS */}
-          <div className="relative h-9 w-9 shrink-0">
+        {isCollapsed ? (
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            data-testid="sidebar-toggle-btn"
+            title="Expand sidebar"
+            aria-label="Expand sidebar"
+            className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 cursor-pointer transition-all active:scale-95"
+          >
+            <PanelLeftOpen className="h-5 w-5" />
+          </button>
+        ) : (
+          <div className="flex w-full items-center justify-between gap-2">
             <Link
               href="/dashboard"
-              aria-label="eTinda POS Dashboard"
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-xs transition-transform duration-150 group-hover/brand:scale-90 group-hover/brand:opacity-0"
+              className="flex min-w-0 items-center gap-2.5 group/brand"
             >
-              <Store className="h-5 w-5" />
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-xs transition-transform duration-150 group-hover/brand:scale-105">
+                <Store className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-base font-bold tracking-tight text-foreground">
+                  eTinda POS
+                </p>
+                <p className="truncate text-[11px] font-medium text-muted-foreground">
+                  {storeName}
+                </p>
+              </div>
             </Link>
 
             <button
               type="button"
               onClick={toggleSidebar}
-              data-testid="sidebar-hover-toggle-btn"
-              aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              className="pointer-events-none absolute inset-0 flex h-9 w-9 scale-90 items-center justify-center rounded-xl bg-primary text-primary-foreground opacity-0 shadow-md ring-2 ring-primary/25 transition-all duration-150 group-hover/brand:pointer-events-auto group-hover/brand:scale-100 group-hover/brand:opacity-100 cursor-pointer"
+              data-testid="sidebar-toggle-btn"
+              title="Collapse sidebar"
+              aria-label="Collapse sidebar"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer transition-colors active:scale-95"
             >
-              {isCollapsed ? (
-                <PanelLeftOpen className="h-5 w-5" />
-              ) : (
-                <PanelLeftClose className="h-5 w-5" />
-              )}
+              <PanelLeftClose className="h-5 w-5" />
             </button>
           </div>
-
-          {!isCollapsed ? (
-            <Link href="/dashboard" className="min-w-0">
-              <p className="truncate text-base font-bold tracking-tight text-foreground">
-                eTinda POS
-              </p>
-              <p className="truncate text-[11px] font-medium text-muted-foreground">
-                {storeName}
-              </p>
-            </Link>
-          ) : null}
-
-          {/* Pop-up tooltip badge on hover */}
-          <div
-            role="tooltip"
-            className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 scale-95 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1 text-xs font-semibold text-white opacity-0 shadow-lg transition-all duration-150 group-hover/brand:scale-100 group-hover/brand:opacity-100"
-          >
-            {isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Navigation Links */}
