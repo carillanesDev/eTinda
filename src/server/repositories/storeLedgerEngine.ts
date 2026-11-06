@@ -79,12 +79,27 @@ export interface ProcessedServerEventRecord extends ServerSyncEventInput {
   acknowledgment: ServerEventAcknowledgment;
 }
 
+export interface DevicePairingCodeRecord {
+  code: string;
+  token: string;
+  storeId: string;
+  deviceName: string;
+  deviceType: "MOBILE" | "TABLET" | "DESKTOP";
+  createdByUserId: string;
+  createdAt: string;
+  expiresAt: string;
+  isClaimed: boolean;
+  claimedAt?: string;
+  claimedDeviceId?: string;
+}
+
 export interface ServerStateSnapshot {
   sequenceCounter: number;
   stores: Map<string, StoreEntity>;
   users: Map<string, UserEntity>;
   userPasswordHashes: Map<string, string>;
   devices: Map<string, DeviceEntity>;
+  devicePairingCodes: Map<string, DevicePairingCodeRecord>;
   categories: Map<string, CategoryEntity>;
   products: Map<string, ProductEntity>;
   productVariants: Map<string, ProductVariantEntity>;
@@ -128,6 +143,7 @@ export function createCleanProductionServerState(): ServerStateSnapshot {
     users: new Map(),
     userPasswordHashes: new Map(),
     devices: new Map([[primaryDevice.id, primaryDevice]]),
+    devicePairingCodes: new Map(),
     categories: new Map(
       dataset.categories.map((item) => [item.id, structuredClone(item)])
     ),
@@ -164,6 +180,7 @@ function createInitialServerState(): ServerStateSnapshot {
     devices: new Map(
       dataset.devices.map((item) => [item.id, structuredClone(item)])
     ),
+    devicePairingCodes: new Map(),
     categories: new Map(
       dataset.categories.map((item) => [item.id, structuredClone(item)])
     ),
@@ -305,6 +322,170 @@ export class StoreLedgerEngine {
       });
 
       return updated;
+    });
+  }
+
+  public createDevicePairingCode(params: {
+    actorUserId: string;
+    storeId: string;
+    deviceName: string;
+    deviceType?: "MOBILE" | "TABLET" | "DESKTOP";
+  }): DevicePairingCodeRecord {
+    const actor = this.state.users.get(params.actorUserId);
+    if (actor && !hasPermission(actor.role, "MANAGE_USERS_AND_DEVICES")) {
+      const err = new Error(
+        "FORBIDDEN: Only Store Owner (ADMIN) can create device pairing codes."
+      ) as Error & { statusCode?: number; code?: string };
+      err.statusCode = 403;
+      err.code = "FORBIDDEN";
+      throw err;
+    }
+
+    // Generate random 6-digit numeric string (100000 - 999999)
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const token = generateUuid();
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+
+    const record: DevicePairingCodeRecord = {
+      code,
+      token,
+      storeId: params.storeId,
+      deviceName: params.deviceName.trim() || `Terminal-${code.slice(0, 3)}`,
+      deviceType: params.deviceType ?? "MOBILE",
+      createdByUserId: params.actorUserId,
+      createdAt: nowIso,
+      expiresAt,
+      isClaimed: false,
+    };
+
+    this.state.devicePairingCodes.set(code, record);
+    this.state.devicePairingCodes.set(token, record);
+    return record;
+  }
+
+  public checkDevicePairingCode(
+    codeOrToken: string
+  ): DevicePairingCodeRecord | undefined {
+    const cleaned = codeOrToken
+      .replace(/[^a-zA-Z0-9-]/g, "")
+      .trim()
+      .toLowerCase();
+    const pureNumbers = cleaned.replace(/-/g, "");
+
+    const record =
+      this.state.devicePairingCodes.get(pureNumbers) ??
+      this.state.devicePairingCodes.get(cleaned);
+
+    if (!record) return undefined;
+    if (new Date(record.expiresAt).getTime() < Date.now()) {
+      return undefined;
+    }
+    return record;
+  }
+
+  public claimDevicePairingCode(
+    codeOrToken: string,
+    requestedDeviceId?: string
+  ): {
+    device: DeviceEntity;
+    store: StoreEntity;
+    users: UserEntity[];
+    categories: CategoryEntity[];
+    products: ProductEntity[];
+  } {
+    return this.runInTransaction((tx) => {
+      const cleaned = codeOrToken
+        .replace(/[^a-zA-Z0-9-]/g, "")
+        .trim()
+        .toLowerCase();
+      const pureNumbers = cleaned.replace(/-/g, "");
+
+      const record =
+        tx.devicePairingCodes.get(pureNumbers) ??
+        tx.devicePairingCodes.get(cleaned);
+
+      if (!record || new Date(record.expiresAt).getTime() < Date.now()) {
+        const err = new Error(
+          "Invalid or expired 6-digit pairing code. Please generate a new code from the main terminal."
+        ) as Error & { statusCode?: number; code?: string };
+        err.statusCode = 404;
+        err.code = "PAIRING_CODE_EXPIRED";
+        throw err;
+      }
+
+      if (record.isClaimed) {
+        const err = new Error(
+          "This pairing code has already been used to connect a device."
+        ) as Error & { statusCode?: number; code?: string };
+        err.statusCode = 409;
+        err.code = "PAIRING_CODE_ALREADY_CLAIMED";
+        throw err;
+      }
+
+      const deviceId = requestedDeviceId || generateUuid();
+      const nowIso = new Date().toISOString();
+
+      const newDevice: DeviceEntity = {
+        id: deviceId,
+        storeId: record.storeId,
+        deviceName: record.deviceName,
+        deviceType: record.deviceType,
+        registeredByUserId: record.createdByUserId,
+        isAuthorized: true,
+        downloadCursor: 0,
+        createdAt: nowIso,
+      };
+
+      tx.devices.set(deviceId, newDevice);
+      record.isClaimed = true;
+      record.claimedAt = nowIso;
+      record.claimedDeviceId = deviceId;
+
+      const auditId = generateUuid();
+      tx.auditLogs.set(auditId, {
+        id: auditId,
+        storeId: record.storeId,
+        deviceId,
+        userId: record.createdByUserId,
+        userNameSnapshot:
+          tx.users.get(record.createdByUserId)?.name ?? "Store Owner",
+        userRole: "ADMIN",
+        action: "DEVICE_AUTHORIZED",
+        entityType: "DEVICE",
+        entityId: deviceId,
+        summary: `Authorized and paired new ${record.deviceType.toLowerCase()} terminal "${record.deviceName}" via pairing code ${record.code.slice(0, 3)}-${record.code.slice(3)}`,
+        createdAt: nowIso,
+      });
+
+      const store =
+        tx.stores.get(record.storeId) ??
+        Array.from(tx.stores.values())[0] ?? {
+          id: record.storeId,
+          name: "My Sari-Sari Store",
+          address: "",
+          contactNumber: "",
+          createdAt: nowIso,
+        };
+
+      const users = Array.from(tx.users.values()).filter(
+        (u) => u.storeId === record.storeId && u.isActive
+      );
+      const categories = Array.from(tx.categories.values()).filter(
+        (c) => c.storeId === record.storeId && c.isActive
+      );
+      const products = Array.from(tx.products.values()).filter(
+        (p) => p.storeId === record.storeId && p.isActive
+      );
+
+      return {
+        device: newDevice,
+        store,
+        users,
+        categories,
+        products,
+      };
     });
   }
 

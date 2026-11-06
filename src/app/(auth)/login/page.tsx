@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ClaimDevicePairingModal } from "@/components/devices/ClaimDevicePairingModal";
 import { authenticateStoreOperator } from "@/features/users/userService";
 import { db } from "@/lib/db/dexie";
 import { ensureLocalDatabaseInitialized } from "@/lib/db/seed-local";
@@ -41,6 +42,20 @@ export default function LoginPage() {
   const [pinCode, setPinCode] = React.useState("");
   const [error, setError] = React.useState("");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [initialPairCode] = React.useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      return params.get("pairCode") || params.get("code") || "";
+    }
+    return "";
+  });
+  const [isClaimModalOpen, setIsClaimModalOpen] = React.useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      return Boolean(params.get("pairCode") || params.get("code"));
+    }
+    return false;
+  });
 
   const matchedUserByIdentifier = identifierInput.trim()
     ? activeUsers.find(
@@ -127,6 +142,27 @@ export default function LoginPage() {
               >
                 <UserPlus className="mr-1.5 h-3.5 w-3.5" />
                 Create Store Owner Account →
+              </Button>
+
+              <div className="relative my-2.5 flex items-center justify-center">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-border/60" />
+                </div>
+                <span className="relative bg-primary-muted px-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Or
+                </span>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="open-pair-device-banner-btn"
+                onClick={() => setIsClaimModalOpen(true)}
+                className="w-full bg-card"
+              >
+                <Smartphone className="mr-1.5 h-3.5 w-3.5 text-primary" />
+                Already have a store? Pair with 6-Digit Code →
               </Button>
             </div>
           ) : (
@@ -245,21 +281,39 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="border-t border-border pt-3 text-center">
+          <div className="space-y-2 border-t border-border pt-3 text-center">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              data-testid="goto-register-owner-link"
-              onClick={() => router.push("/register")}
+              data-testid="open-pair-device-footer-btn"
+              onClick={() => setIsClaimModalOpen(true)}
               className="w-full"
             >
-              <UserPlus className="mr-1.5 h-3.5 w-3.5 text-primary" />
-              Create New Store Owner Account / Setup Store
+              <Smartphone className="mr-1.5 h-3.5 w-3.5 text-primary" />
+              Pair This Device to an Existing Store (6-Digit Code)
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="goto-register-owner-link"
+              onClick={() => router.push("/register")}
+              className="w-full text-xs text-muted-foreground hover:text-foreground"
+            >
+              <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+              Setup Brand New Store / Register Owner
             </Button>
           </div>
         </CardContent>
       </Card>
+
+      <ClaimDevicePairingModal
+        open={isClaimModalOpen}
+        onClose={() => setIsClaimModalOpen(false)}
+        initialCode={initialPairCode}
+      />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, RefreshCw, ShieldAlert, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ClaimDevicePairingModal } from "@/components/devices/ClaimDevicePairingModal";
 import { ensureLocalDatabaseInitialized } from "@/lib/db/seed-local";
 import { useSessionStore } from "@/stores/useSessionStore";
 
@@ -18,6 +19,7 @@ export default function DeviceSetupPage() {
   );
 
   const [isInitializing, setIsInitializing] = React.useState(false);
+  const [isPairModalOpen, setIsPairModalOpen] = React.useState(false);
 
   const handleRunInitialSync = async () => {
     setIsInitializing(true);
@@ -82,8 +84,32 @@ export default function DeviceSetupPage() {
               ? "Seeding Local IndexedDB Catalog..."
               : "Authorize Terminal & Open POS"}
           </Button>
+
+          <div className="relative my-2 flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-border" />
+            </div>
+            <span className="relative bg-card px-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              Or Connect to Main Terminal
+            </span>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={() => setIsPairModalOpen(true)}
+          >
+            <Smartphone className="mr-1.5 h-4 w-4 text-primary" />
+            Pair with Existing Store (6-Digit Code)
+          </Button>
         </CardContent>
       </Card>
+
+      <ClaimDevicePairingModal
+        open={isPairModalOpen}
+        onClose={() => setIsPairModalOpen(false)}
+      />
     </div>
   );
 }

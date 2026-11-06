@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ResponsiveDialog } from "@/components/shared/StateViews";
+import { PairNewDeviceModal } from "@/components/devices/PairNewDeviceModal";
 import {
   createStoreUserAccount,
   toggleStoreUserActiveStatus,
@@ -56,6 +57,7 @@ export default function SettingsAndDevicesPage() {
     null
   );
   const [isCreatingUser, setIsCreatingUser] = React.useState(false);
+  const [isPairDeviceOpen, setIsPairDeviceOpen] = React.useState(false);
 
   const stores = useLiveQuery(async () => db.stores.toArray(), []) ?? [];
   const users = useLiveQuery(async () => db.users.toArray(), []) ?? [];
@@ -344,15 +346,28 @@ export default function SettingsAndDevicesPage() {
 
       {/* Registered Devices & Revocation Control */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Smartphone className="h-4 w-4 text-primary" />
-            Registered Store Terminals & Sync Authorization ({devices.length})
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Per AGENTS.md §11 & §12, each registered device has an independent
-            sync identity and can be revoked by the Store Owner.
-          </p>
+        <CardHeader className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Smartphone className="h-4 w-4 text-primary" />
+              Registered Store Terminals & Sync Authorization ({devices.length})
+            </CardTitle>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Per AGENTS.md §11 & §12, each registered device has an independent
+              sync identity and can be revoked by the Store Owner.
+            </p>
+          </div>
+
+          {canManageDevices ? (
+            <Button
+              size="sm"
+              data-testid="open-pair-device-modal-btn"
+              onClick={() => setIsPairDeviceOpen(true)}
+            >
+              <Smartphone className="mr-1.5 h-4 w-4" />
+              Pair New Terminal
+            </Button>
+          ) : null}
         </CardHeader>
         <CardContent className="divide-y divide-border">
           {devices.map((dev) => (
@@ -654,6 +669,11 @@ export default function SettingsAndDevicesPage() {
           </div>
         </form>
       </ResponsiveDialog>
+
+      <PairNewDeviceModal
+        open={isPairDeviceOpen}
+        onClose={() => setIsPairDeviceOpen(false)}
+      />
     </div>
   );
 }

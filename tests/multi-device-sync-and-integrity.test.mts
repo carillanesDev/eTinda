@@ -948,4 +948,148 @@ describe("eTinda Multi-Device Synchronization, Integrity & Edge-Case Suite (AGEN
     assert.ok(archivedProd);
     assert.equal(archivedProd.isActive, false);
   });
+
+  it("10. Generates 6-digit pairing code on Main Device, authorizes secondary device, and syncs independent transactions", () => {
+    // 1. Owner generates pairing code on Main Device
+    const pairing = engine.createDevicePairingCode({
+      actorUserId: DEFAULT_OWNER_ID,
+      storeId: DEFAULT_STORE_ID,
+      deviceName: "Helper Phone (Terminal 2)",
+      deviceType: "MOBILE",
+    });
+
+    assert.ok(/^\d{6}$/.test(pairing.code), "Code must be exactly 6 digits");
+    assert.equal(pairing.isClaimed, false);
+    assert.equal(pairing.deviceName, "Helper Phone (Terminal 2)");
+
+    // 2. Main device can check pairing status
+    const statusBefore = engine.checkDevicePairingCode(pairing.code);
+    assert.ok(statusBefore);
+    assert.equal(statusBefore.isClaimed, false);
+
+    // 3. Reject invalid or bogus code
+    assert.throws(
+      () => engine.claimDevicePairingCode("000000"),
+      /Invalid or expired 6-digit pairing code/
+    );
+
+    // 4. Secondary device claims code with its own unique RFC 4122 UUID
+    const secondaryDeviceId = generateUuid();
+    const claimResult = engine.claimDevicePairingCode(pairing.code, secondaryDeviceId);
+
+    assert.equal(claimResult.device.id, secondaryDeviceId);
+    assert.equal(claimResult.device.deviceName, "Helper Phone (Terminal 2)");
+    assert.equal(claimResult.device.isAuthorized, true);
+    assert.equal(claimResult.store.id, DEFAULT_STORE_ID);
+    assert.ok(claimResult.products.length > 0, "Must download catalog baseline");
+    assert.ok(claimResult.users.length > 0, "Must download store users");
+
+    // 5. Code cannot be claimed a second time
+    assert.throws(
+      () => engine.claimDevicePairingCode(pairing.code, generateUuid()),
+      /already been used/
+    );
+
+    // 6. Secondary device processes an offline sale with its independent device identity
+    const saleId = generateUuid();
+    const eventId = generateUuid();
+    const syncRes = engine.processSyncBatch({
+      storeId: DEFAULT_STORE_ID,
+      deviceId: secondaryDeviceId,
+      events: [
+        {
+          eventId,
+          storeId: DEFAULT_STORE_ID,
+          deviceId: secondaryDeviceId,
+          userId: DEFAULT_HELPER_ID,
+          eventType: "SALE_CREATED",
+          entityId: saleId,
+          schemaVersion: 1,
+          createdAt: new Date().toISOString(),
+          payload: {
+            sale: {
+              id: saleId,
+              storeId: DEFAULT_STORE_ID,
+              receiptNumber: "SL-TERM2-0001",
+              status: "COMPLETED",
+              totalCentavos: 1500,
+              paymentMethod: "CASH",
+              cashTenderedCentavos: 2000,
+              changeDueCentavos: 500,
+              userId: DEFAULT_HELPER_ID,
+              userNameSnapshot: "Jomar Helper",
+              userRole: "HELPER",
+              deviceId: secondaryDeviceId,
+              lineItemCount: 1,
+              syncStatus: "SYNCED",
+              createdAt: new Date().toISOString(),
+            },
+            saleItems: [
+              {
+                id: generateUuid(),
+                saleId,
+                storeId: DEFAULT_STORE_ID,
+                productId: SEED_PRODUCT_IDS.NESCAFE_TWIN,
+                productNameSnapshot: "Nescafé Original 3-in-1 Twin Pack",
+                unitLabelSnapshot: "sachet",
+                quantity: 1,
+                baseUnitMultiplier: 1,
+                unitSellingPriceCentavos: 1500,
+                unitCostSnapshotCentavos: 1225,
+                subtotalCentavos: 1500,
+              },
+            ],
+            movements: [
+              {
+                id: generateUuid(),
+                storeId: DEFAULT_STORE_ID,
+                productId: SEED_PRODUCT_IDS.NESCAFE_TWIN,
+                movementType: "SALE",
+                quantityChange: -1,
+                resultingStock: 47,
+                referenceType: "SALE",
+                referenceId: saleId,
+                deviceId: secondaryDeviceId,
+                userId: DEFAULT_HELPER_ID,
+                createdAt: new Date().toISOString(),
+              },
+            ],
+            payments: [
+              {
+                id: generateUuid(),
+                storeId: DEFAULT_STORE_ID,
+                saleId,
+                amountCentavos: 1500,
+                paymentType: "CASH",
+                status: "COMPLETED",
+                deviceId: secondaryDeviceId,
+                userId: DEFAULT_HELPER_ID,
+                syncStatus: "SYNCED",
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    assert.equal(syncRes.acknowledgments[0]?.status, "ACKNOWLEDGED");
+    assert.equal(engine.getState().sales.has(saleId), true);
+    assert.equal(engine.getState().sales.get(saleId)?.deviceId, secondaryDeviceId);
+
+    // 7. Store Owner revokes secondary device from Main Device
+    engine.setDeviceAuthorization(DEFAULT_OWNER_ID, secondaryDeviceId, false);
+    assert.equal(engine.isDeviceAuthorized(secondaryDeviceId), false);
+
+    // 8. Subsequent sync attempts by revoked device are rejected (403 DEVICE_REVOKED)
+    assert.throws(
+      () =>
+        engine.processSyncBatch({
+          storeId: DEFAULT_STORE_ID,
+          deviceId: secondaryDeviceId,
+          events: [],
+        }),
+      /This device has been revoked by the Store Owner/
+    );
+  });
 });
