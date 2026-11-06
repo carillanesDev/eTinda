@@ -12,6 +12,15 @@ const updateDeviceAuthorizationSchema = z.object({
 const createDevicePairingSchema = z.object({
   deviceName: z.string().min(2).max(50),
   deviceType: z.enum(["MOBILE", "TABLET", "DESKTOP"]).default("MOBILE"),
+  snapshot: z
+    .object({
+      store: z.any().optional(),
+      users: z.array(z.any()).optional(),
+      categories: z.array(z.any()).optional(),
+      products: z.array(z.any()).optional(),
+      authVerifiers: z.record(z.string(), z.string()).optional(),
+    })
+    .optional(),
 });
 
 export async function GET(request: Request) {
@@ -79,6 +88,7 @@ export async function POST(request: Request) {
       storeId: ctx.storeId,
       deviceName: parsed.data.deviceName,
       deviceType: parsed.data.deviceType,
+      snapshot: parsed.data.snapshot,
     });
 
     return NextResponse.json({

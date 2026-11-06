@@ -424,9 +424,14 @@ export async function authenticateStoreOperator(params: {
 
   // Verify against server `/api/users` (supports multi-device sign-in & Vercel Prisma DB)
   try {
+    const session = useSessionStore.getState();
     const response = await fetch("/api/users", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-etinda-store-id": session.storeId,
+        "x-etinda-device-id": session.deviceId,
+      },
       body: JSON.stringify({
         mode: "VERIFY_CREDENTIALS",
         identifier,

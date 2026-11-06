@@ -1,5 +1,6 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import {
   StoreLedgerEngine,
   createCleanProductionServerState,
@@ -950,12 +951,35 @@ describe("eTinda Multi-Device Synchronization, Integrity & Edge-Case Suite (AGEN
   });
 
   it("10. Generates 6-digit pairing code on Main Device, authorizes secondary device, and syncs independent transactions", () => {
-    // 1. Owner generates pairing code on Main Device
+    // 1. Owner generates pairing code on Main Device with snapshot of users and verifiers
+    const customUserId = generateUuid();
+    const customVerifier = crypto
+      .createHash("sha256")
+      .update(`etinda-v3:${customUserId}:Secret1234`)
+      .digest("hex");
+
     const pairing = engine.createDevicePairingCode({
       actorUserId: DEFAULT_OWNER_ID,
       storeId: DEFAULT_STORE_ID,
       deviceName: "Helper Phone (Terminal 2)",
       deviceType: "MOBILE",
+      snapshot: {
+        users: [
+          {
+            id: customUserId,
+            storeId: DEFAULT_STORE_ID,
+            name: "Juan Cashier",
+            email: "juan@etinda.ph",
+            username: "juan.cashier",
+            role: "HELPER",
+            isActive: true,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+        authVerifiers: {
+          [`auth_verifier:${customUserId}`]: customVerifier,
+        },
+      },
     });
 
     assert.ok(/^\d{6}$/.test(pairing.code), "Code must be exactly 6 digits");
@@ -983,6 +1007,12 @@ describe("eTinda Multi-Device Synchronization, Integrity & Edge-Case Suite (AGEN
     assert.equal(claimResult.store.id, DEFAULT_STORE_ID);
     assert.ok(claimResult.products.length > 0, "Must download catalog baseline");
     assert.ok(claimResult.users.length > 0, "Must download store users");
+    assert.equal(claimResult.authVerifiers[`auth_verifier:${customUserId}`], customVerifier);
+
+    // Secondary device can verify credentials locally or remotely
+    const verified = engine.verifyUserCredentials("juan.cashier", "Secret1234");
+    assert.ok(verified, "Must verify credentials on server using snapshot verifier");
+    assert.equal(verified?.id, customUserId);
 
     // 5. Code cannot be claimed a second time
     assert.throws(

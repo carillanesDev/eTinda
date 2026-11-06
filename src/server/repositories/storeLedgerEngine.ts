@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { buildInitialSeedDataset } from "../../lib/db/seed-local.ts";
 import {
   hashPasswordOrPin,
@@ -91,6 +92,13 @@ export interface DevicePairingCodeRecord {
   isClaimed: boolean;
   claimedAt?: string;
   claimedDeviceId?: string;
+  snapshot?: {
+    store?: StoreEntity;
+    users?: UserEntity[];
+    categories?: CategoryEntity[];
+    products?: ProductEntity[];
+    authVerifiers?: Record<string, string>;
+  };
 }
 
 export interface ServerStateSnapshot {
@@ -330,6 +338,13 @@ export class StoreLedgerEngine {
     storeId: string;
     deviceName: string;
     deviceType?: "MOBILE" | "TABLET" | "DESKTOP";
+    snapshot?: {
+      store?: StoreEntity;
+      users?: UserEntity[];
+      categories?: CategoryEntity[];
+      products?: ProductEntity[];
+      authVerifiers?: Record<string, string>;
+    };
   }): DevicePairingCodeRecord {
     const actor = this.state.users.get(params.actorUserId);
     if (actor && !hasPermission(actor.role, "MANAGE_USERS_AND_DEVICES")) {
@@ -358,7 +373,28 @@ export class StoreLedgerEngine {
       createdAt: nowIso,
       expiresAt,
       isClaimed: false,
+      snapshot: params.snapshot,
     };
+
+    // Hydrate serverStoreLedger state with the main device's catalog & users
+    if (params.snapshot?.store) {
+      this.state.stores.set(params.snapshot.store.id, params.snapshot.store);
+    }
+    if (params.snapshot?.users) {
+      for (const u of params.snapshot.users) {
+        this.state.users.set(u.id, u);
+      }
+    }
+    if (params.snapshot?.categories) {
+      for (const c of params.snapshot.categories) {
+        this.state.categories.set(c.id, c);
+      }
+    }
+    if (params.snapshot?.products) {
+      for (const p of params.snapshot.products) {
+        this.state.products.set(p.id, p);
+      }
+    }
 
     this.state.devicePairingCodes.set(code, record);
     this.state.devicePairingCodes.set(token, record);
@@ -394,6 +430,7 @@ export class StoreLedgerEngine {
     users: UserEntity[];
     categories: CategoryEntity[];
     products: ProductEntity[];
+    authVerifiers: Record<string, string>;
   } {
     return this.runInTransaction((tx) => {
       const cleaned = codeOrToken
@@ -460,6 +497,7 @@ export class StoreLedgerEngine {
       });
 
       const store =
+        record.snapshot?.store ??
         tx.stores.get(record.storeId) ??
         Array.from(tx.stores.values())[0] ?? {
           id: record.storeId,
@@ -469,15 +507,28 @@ export class StoreLedgerEngine {
           createdAt: nowIso,
         };
 
-      const users = Array.from(tx.users.values()).filter(
-        (u) => u.storeId === record.storeId && u.isActive
-      );
-      const categories = Array.from(tx.categories.values()).filter(
-        (c) => c.storeId === record.storeId && c.isActive
-      );
-      const products = Array.from(tx.products.values()).filter(
-        (p) => p.storeId === record.storeId && p.isActive
-      );
+      const users =
+        record.snapshot?.users && record.snapshot.users.length > 0
+          ? record.snapshot.users
+          : Array.from(tx.users.values()).filter(
+              (u) => u.storeId === record.storeId && u.isActive
+            );
+
+      const categories =
+        record.snapshot?.categories && record.snapshot.categories.length > 0
+          ? record.snapshot.categories
+          : Array.from(tx.categories.values()).filter(
+              (c) => c.storeId === record.storeId && c.isActive
+            );
+
+      const products =
+        record.snapshot?.products && record.snapshot.products.length > 0
+          ? record.snapshot.products
+          : Array.from(tx.products.values()).filter(
+              (p) => p.storeId === record.storeId && p.isActive
+            );
+
+      const authVerifiers = record.snapshot?.authVerifiers ?? {};
 
       return {
         device: newDevice,
@@ -485,6 +536,7 @@ export class StoreLedgerEngine {
         users,
         categories,
         products,
+        authVerifiers,
       };
     });
   }
@@ -744,7 +796,7 @@ export class StoreLedgerEngine {
     pinOrPassword: string
   ): UserEntity | null {
     const query = usernameOrEmailOrUserId.trim().toLowerCase();
-    const user =
+    let user =
       this.state.users.get(usernameOrEmailOrUserId) ??
       Array.from(this.state.users.values()).find(
         (u) =>
@@ -752,8 +804,40 @@ export class StoreLedgerEngine {
           u.email.toLowerCase() === query
       );
 
+    // If not in state.users, check snapshot users from devicePairingCodes
+    if (!user) {
+      for (const pairing of this.state.devicePairingCodes.values()) {
+        const found = pairing.snapshot?.users?.find(
+          (u) =>
+            u.id === usernameOrEmailOrUserId ||
+            u.username.toLowerCase() === query ||
+            u.email.toLowerCase() === query
+        );
+        if (found) {
+          user = found;
+          this.state.users.set(user.id, user);
+          break;
+        }
+      }
+    }
+
     if (!user || !user.isActive) {
       return null;
+    }
+
+    // Check pairing code snapshot verifiers (one-way salted SHA-256)
+    for (const pairing of this.state.devicePairingCodes.values()) {
+      const verifier =
+        pairing.snapshot?.authVerifiers?.[`auth_verifier:${user.id}`];
+      if (verifier) {
+        const candidate = crypto
+          .createHash("sha256")
+          .update(`etinda-v3:${user.id}:${pinOrPassword.trim()}`)
+          .digest("hex");
+        if (candidate === verifier) {
+          return user;
+        }
+      }
     }
 
     const storedHash = this.state.userPasswordHashes.get(user.id);

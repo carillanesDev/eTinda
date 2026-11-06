@@ -37,6 +37,7 @@ export async function POST(request: Request) {
       users: result.users,
       categories: result.categories,
       products: result.products,
+      authVerifiers: result.authVerifiers,
     });
   } catch (error) {
     const err = error as Error & { statusCode?: number; code?: string };

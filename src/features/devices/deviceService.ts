@@ -39,6 +39,21 @@ export async function requestDevicePairingCode(params: {
 }): Promise<PairingCodeInfo> {
   const session = useSessionStore.getState();
 
+  // Export current local store state snapshot so the paired device gets exact store, users & auth verifiers
+  const localStore =
+    (await db.stores.get(session.storeId)) ??
+    (await db.stores.toCollection().first());
+  const localUsers = await db.users.filter((u) => u.isActive).toArray();
+  const localCategories = await db.categories.toArray();
+  const localProducts = await db.products.toArray();
+  const allMeta = await db.sync_metadata.toArray();
+  const authVerifiers: Record<string, string> = {};
+  for (const m of allMeta) {
+    if (m.key.startsWith("auth_verifier:")) {
+      authVerifiers[m.key] = m.value;
+    }
+  }
+
   const response = await fetch("/api/devices", {
     method: "POST",
     headers: {
@@ -51,6 +66,13 @@ export async function requestDevicePairingCode(params: {
     body: JSON.stringify({
       deviceName: params.deviceName.trim(),
       deviceType: params.deviceType ?? "MOBILE",
+      snapshot: {
+        store: localStore,
+        users: localUsers,
+        categories: localCategories,
+        products: localProducts,
+        authVerifiers,
+      },
     }),
   });
 
@@ -164,6 +186,7 @@ export async function claimDevicePairingCode(
     users?: UserEntity[];
     categories?: CategoryEntity[];
     products?: ProductEntity[];
+    authVerifiers?: Record<string, string>;
   };
 
   if (!response.ok || !data.ok || !data.device || !data.store) {
@@ -173,10 +196,17 @@ export async function claimDevicePairingCode(
     );
   }
 
-  const { device, store, users = [], categories = [], products = [] } = data;
+  const {
+    device,
+    store,
+    users = [],
+    categories = [],
+    products = [],
+    authVerifiers = {},
+  } = data;
   const nowIso = new Date().toISOString();
 
-  // Atomically commit store, device, users, categories, and products into local IndexedDB
+  // Atomically commit store, device, users, categories, products, and auth verifiers into local IndexedDB
   await db.transaction(
     "rw",
     [
@@ -200,6 +230,15 @@ export async function claimDevicePairingCode(
       }
       if (products.length > 0) {
         await db.products.bulkPut(products);
+      }
+
+      // Persist client credential verifiers so user can log in immediately offline
+      for (const [key, value] of Object.entries(authVerifiers)) {
+        await db.sync_metadata.put({
+          key,
+          value,
+          updatedAt: nowIso,
+        });
       }
 
       await db.sync_metadata.put({
